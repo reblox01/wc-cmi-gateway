@@ -1,0 +1,142 @@
+# Copyright (C) 2025 Sohail Koutari
+# This file is distributed under the GPL v2 or later.
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: CMI Payment Gateway for WooCommerce 1.0.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/wc-cmi-gateway\n"
+"POT-Creation-Date: 2025-09-26 10:02+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.7\n"
+
+#: wc-cmi-gateway.php:123
+msgid "CMI Payment Gateway requires WooCommerce to be installed and active."
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:31
+msgid "Settings"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:33
+msgid "FAQ"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:48
+msgid "CMI Gateway requires configuration. Please %1$sconfigure your CMI credentials%2$s to start accepting payments."
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:64
+msgid "CMI Payment Information"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:77
+msgid "Transaction ID:"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:83
+msgid "Approval Code:"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:88
+msgid "Mode:"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:91
+msgid "Test Mode"
+msgstr ""
+
+#: includes/class-wc-cmi-admin.php:92
+msgid "Live Mode"
+msgstr ""
+
+#: wc-cmi-gateway.php:256
+msgid "Amount below minimum: %s"
+msgstr ""
+
+#: wc-cmi-gateway.php:260
+msgid "Amount above maximum: %s"
+msgstr ""
+
+#: wc-cmi-gateway.php:271
+msgid "Currency not supported by CMI"
+msgstr ""
+
+#: wc-cmi-gateway.php:354
+msgid "Payment accepted via CMI (verified)."
+msgstr ""
+
+#: wc-cmi-gateway.php:359
+msgid "Payment failed via CMI (verified)."
+msgstr ""
+
+# Translation for admin settings
+msgid "Enable/Disable"
+msgstr ""
+
+msgid "Enable CMI Payment"
+msgstr ""
+
+msgid "Title"
+msgstr ""
+
+msgid "This controls the title which the user sees during checkout."
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "This controls the description which the user sees during checkout."
+msgstr ""
+
+msgid "Client ID"
+msgstr ""
+
+msgid "Your CMI merchant ID"
+msgstr ""
+
+msgid "Store Key"
+msgstr ""
+
+msgid "Your CMI store key"
+msgstr ""
+
+msgid "Test mode"
+msgstr ""
+
+msgid "Enable Test Mode"
+msgstr ""
+
+msgid "Place the payment gateway in test mode using test credentials."
+msgstr ""
+
+msgid "Debug log"
+msgstr ""
+
+msgid "Enable logging"
+msgstr ""
+
+msgid "Log CMI events inside"
+msgstr ""
+
+msgid "Supported Currencies"
+msgstr ""
+
+msgid "Select which currencies you accept for CMI payment"
+msgstr ""
+
+msgid "Minimum Amount"
+msgstr ""
+
+msgid "Minimum transaction amount allowed"
+msgstr ""
+
+msgid "Maximum Amount"
+msgstr ""
+
+msgid "Maximum transaction amount allowed"
+msgstr ""
