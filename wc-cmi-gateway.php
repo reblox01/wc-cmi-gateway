@@ -127,11 +127,24 @@ add_action('init', 'wc_cmi_init_admin');
 
 // Initialize the gateway
 add_action('plugins_loaded', 'wc_cmi_init', 11);
-function wc_cmi_init(){
-    if (!class_exists('WC_Payment_Gateway')) return;
+if (!defined('ABSPATH')) {
+    exit;
+}
 
-    class WC_Gateway_CMI extends WC_Payment_Gateway {
-        public function __construct(){
+/**
+ * CMI Payment Gateway Class
+ */
+function wc_cmi_init() {
+    if (class_exists('WC_Payment_Gateway')) {
+        if (!class_exists('WC_Gateway_CMI')) {
+            /**
+             * CMI Payment Gateway Class
+             */
+            class WC_Gateway_CMI extends WC_Payment_Gateway {
+                /**
+                 * Constructor
+                 */
+                public function __construct() {
             $this->id = 'cmi_gateway';
             $this->method_title = 'CMI (Morocco)';
             $this->has_fields = false;
@@ -146,6 +159,123 @@ function wc_cmi_init(){
 
             add_action('woocommerce_api_wc_gateway_cmi', array($this, 'handle_callback'));
             add_action('woocommerce_thankyou_' . $this->id, array($this, 'thankyou_page'));
+        }
+
+        /**
+         * Process incoming CMI callback/return request
+         */
+        protected function process_callback_request($request) {
+            $this->log_debug('CMI callback received: ' . $this->redact_for_log($request));
+
+            // Get order id — banks sometimes return custom fields, check your payload
+            $order_id = intval( $request['order_id'] ?? $request['orderid'] ?? $request['oid'] ?? 0 );
+            if ( ! $order_id ) {
+                wp_die('Invalid order id');
+            }
+
+            $order = wc_get_order( $order_id );
+            if ( ! $order ) {
+                wp_die('Order not found');
+            }
+
+            $verified = false;
+
+            // Use bundled library for verification
+            try {
+                // Instantiate client
+                $client = new CmiClient(['storekey' => $this->storekey]);
+                // try common method names (you must verify exact method name in the library)
+                if ( method_exists($client, 'verifyResponse') ) {
+                    $verified = (bool) $client->verifyResponse( $request );
+                } elseif ( method_exists($client, 'checkHash') ) {
+                    $verified = (bool) $client->checkHash( $request );
+                } elseif ( function_exists('Mehdirochdi\\CMI\\verify_response') ) {
+                    // some packages expose a function
+                    $verified = (bool) \Mehdirochdi\CMI\verify_response( $request, $this->storekey );
+                }
+            } catch (Exception $e) {
+                $this->log_debug('CMI library verification error: ' . $e->getMessage());
+                $verified = false;
+            }
+
+            // Fallback: if request contains a 'hash' or 'signature' compute expected HMAC and compare
+            if ( ! $verified && isset($request['HASH']) ) {
+                $incoming_hash = $request['HASH'];
+                
+                // Get stored hash parameters
+                $stored_params = get_post_meta($order_id, '_cmi_hash_params', true);
+                
+                if (!empty($stored_params)) {
+                    // Build verification string exactly as CMI expects
+                    $hashstr = implode('', [
+                        $stored_params['clientid'],
+                        $stored_params['oid'],
+                        $stored_params['amount'],
+                        $request['Response'] ?? '',  // Include response code in verification
+                        $stored_params['rnd'],
+                        $this->storekey
+                    ]);
+                    
+                    $expected_hash = base64_encode(pack('H*', sha1($hashstr)));
+                    
+                    // Timing-safe comparison
+                    if (function_exists('hash_equals')) {
+                        $verified = hash_equals($expected_hash, (string)$incoming_hash);
+                    } else {
+                        $verified = ($expected_hash === (string)$incoming_hash);
+                    }
+                    
+                    // Store transaction data if verified
+                    if ($verified) {
+                        if (!empty($request['TransId'])) {
+                            $order->set_transaction_id($request['TransId']);
+                        }
+                        if (!empty($request['approval'])) {
+                            update_post_meta($order_id, '_cmi_approval_code', sanitize_text_field($request['approval']));
+                        }
+                    }
+                }
+
+                if ( ! $verified ) {
+                    $this->log_debug('CMI fallback hash mismatch. expected='.$expected_hash.' received=' . substr((string)$incoming_hash,0,10).'...');
+                }
+            }
+
+            // If still not verified, DO NOT mark order as paid. Fail safe.
+            if ( ! $verified ) {
+                $order->update_status('failed', 'CMI: callback verification failed. Check logs.');
+                wp_die('Verification failed');
+            }
+
+            // If verified, check status field
+            $status = strtolower( sanitize_text_field( $request['status'] ?? $request['response'] ?? $request['result'] ?? '' ) );
+
+            // Also verify amount matches to avoid tampering
+            $returned_amount = isset($request['amount']) ? number_format( (float) $request['amount'], 2, '.', '' ) : number_format( (float) $order->get_total(), 2, '.', '' );
+            $order_amount = number_format( (float) $order->get_total(), 2, '.', '' );
+
+            if ( $returned_amount !== $order_amount ) {
+                $order->update_status('on-hold', 'CMI: amount mismatch (possible tampering).');
+                $this->log_debug("CMI amount mismatch: returned={$returned_amount} expected={$order_amount}");
+                wp_die('Amount mismatch');
+            }
+
+            // Decide which statuses mean success — adapt to your bank's values
+            $success_values = ['00']; // Approved or completed successfully
+            $pending_values = ['01']; // With Reference (Authorized)
+            
+            if ( in_array($status, $success_values, true) ) {
+                if ( $order->get_status() !== 'processing' && $order->get_status() !== 'completed' ) {
+                    $order->payment_complete();
+                    $order->add_order_note( 'Payment accepted via CMI (verified).' );
+                }
+                wp_redirect( $order->get_checkout_order_received_url() );
+                exit;
+            } else {
+                $order->update_status('failed', 'Payment failed via CMI (verified).');
+                wp_redirect( $order->get_checkout_order_received_url() );
+                exit;
+            }
         }
 
         public function init_form_fields(){
@@ -249,9 +379,9 @@ function wc_cmi_init(){
                 // add other fields your bank requires
             ];
 
-            // If the official library exists use it (it may provide helper methods)
-            try {
-                $client = new CmiClient(array_merge($payload, [
+                // If the official library exists use it (it may provide helper methods)
+                try {
+                    $client = new CmiClient(array_merge($payload, [
                         'storekey' => $this->storekey,
                         // library might accept 'sandbox' or a url param — check library README
                         'sandbox' => $this->testmode ? true : false,
@@ -266,12 +396,9 @@ function wc_cmi_init(){
                     // fallback to form redirect below
                     $this->log_debug('CMI library redirect failed: ' . $e->getMessage());
                 }
-            }
 
-            // Build payment form fields with CMI's required format
-            $endpoint = $this->testmode ? $this->get_option('sandbox_url') : $this->get_option('production_url');
-            
-            $form_fields = [
+                // Build payment form fields with CMI's required format
+                $endpoint = $this->testmode ? $this->get_option('sandbox_url') : $this->get_option('production_url');            $form_fields = [
                 'clientid' => $this->clientid,
                 'storetype' => '3D_PAY_HOSTING',
                 'oid' => $order->get_order_number(),
@@ -327,13 +454,16 @@ function wc_cmi_init(){
             // Return instead of echoing
             return array(
                 'result' => 'success',
-                'redirect' => add_query_arg([
-                    'cmi_redirect' => '1',
-                    'order_id' => $order->get_id(),
-                    'fields' => base64_encode(json_encode($form_fields))
-                ], $endpoint)
+                'redirect' => add_query_arg(
+                    array(
+                        'cmi_redirect' => '1',
+                        'order_id' => $order->get_id(),
+                        'fields' => base64_encode(json_encode($form_fields))
+                    ),
+                    $endpoint
+                )
             );
-        }
+        } // End process_payment method
 
         /**
          * Handle callback (IPN / return)
@@ -346,9 +476,10 @@ function wc_cmi_init(){
          *
          * Replace/adjust the verification section to match CMI's exact algorithm.
          */
-        public function handle_callback(){
+        public function handle_callback() {
             // Collect incoming data (POST preferred for security)
             $request = $_POST + $_GET; // merge; prefer POST from bank
+            return $this->process_callback_request($request);
             $this->log_debug('CMI callback received: ' . $this->redact_for_log($request));
 
             // Get order id — banks sometimes return custom fields, check your payload
@@ -381,6 +512,39 @@ function wc_cmi_init(){
                     $this->log_debug('CMI library verification error: ' . $e->getMessage());
                     $verified = false;
                 }
+
+            if ( ! $order_id ) {
+                wp_die('Invalid order id');
+            }
+
+            $order = wc_get_order( $order_id );
+            if ( ! $order ) {
+                wp_die('Order not found');
+            }
+
+            // 2) Fallback: if request contains a 'hash' or 'signature' compute expected HMAC and compare
+            if (!$verified && isset($request['hash'])) {
+                $verified = $this->verify_hash($request);
+            }
+
+            $verified = false;
+
+            // Use bundled library for verification
+            try {
+                // Instantiate client
+                $cmi = new CmiClient(['storekey' => $this->storekey]);
+                // try common method names (you must verify exact method name in the library)
+                if ( method_exists($cmi, 'verifyResponse') ) {
+                    $verified = (bool) $cmi->verifyResponse( $request );
+                } elseif ( method_exists($client, 'checkHash') ) {
+                    $verified = (bool) $client->checkHash( $request );
+                } elseif ( function_exists('Mehdirochdi\\CMI\\verify_response') ) {
+                    // some packages expose a function
+                    $verified = (bool) \Mehdirochdi\CMI\verify_response( $request, $this->storekey );
+                }
+            } catch (Exception $e) {
+                $this->log_debug('CMI library verification error: ' . $e->getMessage());
+                $verified = false;
             }
 
             // 2) Fallback: if request contains a 'hash' or 'signature' compute expected HMAC and compare
@@ -541,11 +705,14 @@ function wc_cmi_init(){
             // Return the mapped language or 'en' as default
             return isset($supported_langs[$lang]) ? $supported_langs[$lang] : 'en';
         }
-    }
+    } // End class WC_Gateway_CMI
+    } // End if !class_exists
+} // End function wc_cmi_init
 
-    function wc_add_cmi_gateway($methods){
-        $methods[] = 'WC_Gateway_CMI';
-        return $methods;
-    }
-    add_filter('woocommerce_payment_gateways', 'wc_add_cmi_gateway');
+// Add CMI gateway to WooCommerce
+function wc_add_cmi_gateway($methods) {
+    $methods[] = 'WC_Gateway_CMI';
+    return $methods;
+}
+add_filter('woocommerce_payment_gateways', 'wc_add_cmi_gateway');
 }
