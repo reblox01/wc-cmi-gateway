@@ -22,18 +22,14 @@ define( 'WC_CMI_VERSION', '1.0.0' );
 define( 'WC_CMI_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WC_CMI_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
-// Load Composer autoloader if it exists
-if ( file_exists( WC_CMI_PLUGIN_DIR . 'vendor/autoload.php' ) ) {
-    require_once WC_CMI_PLUGIN_DIR . 'vendor/autoload.php';
-} else {
-    // Display admin notice if vendor/autoload.php is missing
-    add_action( 'admin_notices', function() {
-        echo '<div class="error"><p>' . 
-             __( 'CMI Gateway: Missing required dependencies. Please run composer install.', 'wc-cmi-gateway' ) . 
-             '</p></div>';
-    });
-    return;
-}
+// Load CMI library
+require_once WC_CMI_PLUGIN_DIR . 'lib/CmiClientInterface.php';
+require_once WC_CMI_PLUGIN_DIR . 'lib/BaseCmiClient.php';
+require_once WC_CMI_PLUGIN_DIR . 'lib/CmiClient.php';
+require_once WC_CMI_PLUGIN_DIR . 'lib/Exception/ExceptionInterface.php';
+require_once WC_CMI_PLUGIN_DIR . 'lib/Exception/InvalidArgumentException.php';
+
+use WC_CMI_Gateway\Lib\CmiClient;
 
 // Include required files
 require_once WC_CMI_PLUGIN_DIR . 'includes/class-wc-cmi-admin.php';
@@ -133,13 +129,6 @@ add_action('init', 'wc_cmi_init_admin');
 add_action('plugins_loaded', 'wc_cmi_init', 11);
 function wc_cmi_init(){
     if (!class_exists('WC_Payment_Gateway')) return;
-
-    // Try to include composer autoload (if you used composer) otherwise include init.php fallback
-    if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
-        require_once __DIR__ . '/vendor/autoload.php';
-    } else if ( file_exists( WP_PLUGIN_DIR . '/cmi-lib/init.php' ) ) {
-        require_once WP_PLUGIN_DIR . '/cmi-lib/init.php';
-    }
 
     class WC_Gateway_CMI extends WC_Payment_Gateway {
         public function __construct(){
@@ -261,9 +250,8 @@ function wc_cmi_init(){
             ];
 
             // If the official library exists use it (it may provide helper methods)
-            if ( class_exists('Mehdirochdi\\CMI\\CmiClient') ) {
-                try {
-                    $client = new Mehdirochdi\CMI\CmiClient(array_merge($payload, [
+            try {
+                $client = new CmiClient(array_merge($payload, [
                         'storekey' => $this->storekey,
                         // library might accept 'sandbox' or a url param — check library README
                         'sandbox' => $this->testmode ? true : false,
@@ -376,11 +364,10 @@ function wc_cmi_init(){
 
             $verified = false;
 
-            // 1) Preferred: use library verification if available (example method names — check library)
-            if ( class_exists('Mehdirochdi\\CMI\\CmiClient') ) {
-                try {
-                    // instantiate client if library needs it (some libs provide a static verify method)
-                    $client = new Mehdirochdi\CMI\CmiClient(['storekey' => $this->storekey]);
+            // Use bundled library for verification
+            try {
+                // Instantiate client
+                $client = new CmiClient(['storekey' => $this->storekey]);
                     // try common method names (you must verify exact method name in the library)
                     if ( method_exists($client, 'verifyResponse') ) {
                         $verified = (bool) $client->verifyResponse( $request );
