@@ -1,12 +1,12 @@
 === CMI Payment Gateway for WooCommerce ===
-Contributors: sohailkoutari
+Contributors: xanx - Sohail Koutari
 Tags: woocommerce, payment gateway, morocco, cmi, credit card, payment, ecommerce
 Requires at least: 5.8
 Tested up to: 6.3
 Requires PHP: 8.1
 Stable tag: 1.0.0
-License: GPLv2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+License: GPLv3 or later
+License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
 Official CMI (Centre Monétique Interbancaire) payment gateway integration for WooCommerce. Accept credit card payments securely in Morocco.
 
